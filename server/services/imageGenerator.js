@@ -1,33 +1,46 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+// Modelos disponibles para generación de imágenes con esta API key
+const IMAGE_MODELS = [
+  'nano-banana-pro-preview',
+  'gemini-3-pro-image-preview', 
+  'gemini-3.1-flash-image-preview',
+  'gemini-2.5-flash-image',
+]
+
 /**
  * Genera una imagen usando Gemini para enriquecer un slide
  * @param {string} apiKey - Gemini API key
- * @param {string} prompt - Descripción de la imagen a generar
- * @returns {Promise<string|null>} - Base64 de la imagen o null si falla
+ * @param {string} prompt - Descripción de la imagen
+ * @returns {Promise<string|null>} - Data URL base64 o null si falla
  */
 export async function generateSlideImage(apiKey, prompt) {
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    // Usar gemini-2.0-flash-exp que soporta generación de imágenes
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp-image-generation' })
-
-    const result = await model.generateContent({
-      contents: [{
-        role: 'user',
-        parts: [{ text: `Create a high-quality, professional background image for a presentation slide about: ${prompt}. The image should be subtle, artistic, and suitable as a slide background. Widescreen 16:9 format.` }]
-      }],
-      generationConfig: { responseModalities: ['IMAGE'] }
-    })
-
-    const imagePart = result.response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
-    if (!imagePart?.inlineData) return null
-
-    return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`
-  } catch (err) {
-    console.error('[ImageGenerator] Error:', err.message)
-    return null
+  const genAI = new GoogleGenerativeAI(apiKey)
+  
+  for (const modelName of IMAGE_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName })
+      const result = await model.generateContent({
+        contents: [{ 
+          role: 'user', 
+          parts: [{ text: `Create a high-quality, professional, artistic background image for a presentation slide about: ${prompt}. Widescreen 16:9 format. Subtle and elegant, suitable as a slide background.` }]
+        }],
+        generationConfig: { responseModalities: ['IMAGE'] }
+      })
+      
+      const imagePart = result.response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
+      if (imagePart?.inlineData) {
+        console.log(`[ImageGenerator] Imagen generada con ${modelName}`)
+        return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`
+      }
+    } catch (err) {
+      console.log(`[ImageGenerator] ${modelName} falló: ${err.message.slice(0, 60)}`)
+      continue
+    }
   }
+  
+  console.log('[ImageGenerator] Todos los modelos fallaron, continuando sin imagen')
+  return null
 }
 
 /**
@@ -46,13 +59,13 @@ export function injectBackgroundImage(html, imageBase64) {
         opacity: 0.15;
         z-index: 0;
         pointer-events: none;
+        border-radius: inherit;
       }
       .slide { position: relative; z-index: 1; }
     </style>`
   const bgDiv = `<div class="slide-bg-image"></div>`
-
-  // Inyectar el estilo en el head y el div antes del contenido del .slide
+  
   return html
-    .replace('</head>', `${bgStyle}</head>`)
-    .replace(/(<div[^>]*class="[^"]*slide[^"]*"[^>]*>)/, `$1${bgDiv}`)
+    .replace('</head>', `${bgStyle}\n</head>`)
+    .replace(/(<div[^>]*class="[^"]*\bslide\b[^"]*"[^>]*>)/i, `$1\n${bgDiv}`)
 }

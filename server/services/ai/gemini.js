@@ -6,7 +6,7 @@ export class GeminiProvider extends AIProvider {
   constructor(apiKey) {
     super(apiKey)
     this.genAI = new GoogleGenerativeAI(apiKey)
-    this.modelName = 'gemini-1.5-pro'
+    this.modelName = 'gemini-2.0-flash'
   }
 
   async chat(messages, options = {}) {
