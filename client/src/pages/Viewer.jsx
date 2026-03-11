@@ -56,6 +56,7 @@ function PresentationViewer({ project, onBack, onProjectRefresh }) {
   const [regenInstructions, setRegenInstructions] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [exportingFormat, setExportingFormat] = useState(null) // 'pdf' | 'pptx' | 'zip' | null
 
   const wrapperRef  = useRef(null)
   const rootRef     = useRef(null)
@@ -100,6 +101,40 @@ function PresentationViewer({ project, onBack, onProjectRefresh }) {
     () => (document.fullscreenElement ? exitFullscreen() : enterFullscreen()),
     [enterFullscreen, exitFullscreen]
   )
+
+  const handleExport = async (format) => {
+    setExportingFormat(format)
+    try {
+      const urlMap = {
+        pdf:  `/api/projects/${project.slug}/export/pdf`,
+        pptx: `/api/projects/${project.slug}/export/pptx`,
+        zip:  `/api/projects/${project.slug}/export`,
+      }
+      const extMap = { pdf: 'pdf', pptx: 'pptx', zip: 'zip' }
+
+      const res = await fetch(urlMap[format])
+      if (!res.ok) {
+        const text = await res.text()
+        let msg
+        try { msg = JSON.parse(text).error } catch { msg = text || `Error ${res.status}` }
+        alert(`Error al exportar: ${msg}`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.slug}.${extMap[format]}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(`Error al exportar: ${err.message}`)
+    } finally {
+      setExportingFormat(null)
+    }
+  }
 
   const handleBack = useCallback(() => {
     if (document.fullscreenElement) document.exitFullscreen?.()
@@ -262,31 +297,34 @@ function PresentationViewer({ project, onBack, onProjectRefresh }) {
           </button>
           <div style={{ position: 'relative' }}>
             <button
-              onClick={() => setExportMenuOpen(!exportMenuOpen)}
-              style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: '#888', borderColor: '#333' }}
+              onClick={() => !exportingFormat && setExportMenuOpen(!exportMenuOpen)}
+              disabled={!!exportingFormat}
+              style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: exportingFormat ? '#4CAF50' : '#888', borderColor: exportingFormat ? '#1B5E20' : '#333', opacity: exportingFormat ? 1 : 1 }}
             >
-              ⬇ Exportar ▾
+              {exportingFormat ? `⏳ Generando ${exportingFormat.toUpperCase()}...` : '⬇ Exportar ▾'}
             </button>
-            {exportMenuOpen && (
+            {exportMenuOpen && !exportingFormat && (
               <div style={{
                 position: 'absolute', top: '100%', right: 0, marginTop: 4,
                 background: '#111', border: '1px solid #222', borderRadius: 10,
-                padding: 6, zIndex: 100, minWidth: 200,
+                padding: 6, zIndex: 100, minWidth: 220,
               }}>
                 {[
-                  { label: '📄 PDF', action: () => { exportProjectPDF(project.slug); setExportMenuOpen(false) } },
-                  { label: '📊 PowerPoint (.pptx)', action: () => { exportProjectPPTX(project.slug); setExportMenuOpen(false) } },
-                  { label: '📦 ZIP (HTMLs)', action: () => { exportProject(project.slug); setExportMenuOpen(false) } },
+                  { label: '📄 PDF', fmt: 'pdf', note: '~20-60s', action: () => { setExportMenuOpen(false); handleExport('pdf') } },
+                  { label: '📊 PowerPoint (.pptx)', fmt: 'pptx', note: '~20-60s', action: () => { setExportMenuOpen(false); handleExport('pptx') } },
+                  { label: '📦 ZIP (HTMLs)', fmt: 'zip', note: 'Inmediato', action: () => { setExportMenuOpen(false); handleExport('zip') } },
                 ].map(item => (
                   <button key={item.label} onClick={item.action} style={{
-                    display: 'block', width: '100%', textAlign: 'left',
+                    display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
                     padding: '8px 12px', borderRadius: 7, border: 'none',
-                    background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 13,
+                    background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 13, textAlign: 'left',
+                    boxSizing: 'border-box',
                   }}
                     onMouseEnter={e => e.currentTarget.style.background = '#1a1a1a'}
                     onMouseLeave={e => e.currentTarget.style.background = 'none'}
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    <span style={{ color: '#333', fontSize: 11 }}>{item.note}</span>
                   </button>
                 ))}
               </div>
