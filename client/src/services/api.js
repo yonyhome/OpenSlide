@@ -16,11 +16,20 @@ export const saveSettings = (data) => fetch(`${BASE}/settings`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(data)
 }).then(r => r.json())
-export const sendChat = (messages, model, apiKey, slug = null) => fetch(`${BASE}/ai/chat`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ messages, model, apiKey, slug })
-}).then(r => r.json())
+export const sendChat = async (messages, model, apiKey, slug = null) => {
+  const res = await fetch(`${BASE}/ai/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, model, apiKey, slug })
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let errMsg
+    try { errMsg = JSON.parse(text).error } catch { errMsg = text || `HTTP ${res.status}` }
+    throw new Error(errMsg)
+  }
+  return res.json()
+}
 export const generateSlide = (context) => fetch(`${BASE}/ai/generate-slide`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },

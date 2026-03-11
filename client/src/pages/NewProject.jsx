@@ -256,8 +256,11 @@ export default function NewProject() {
     setInput('')
     addMsg('user', userText)
 
-    // Agregar a historial
-    chatHistoryRef.current = [...chatHistoryRef.current, { role: 'user', content: userText }]
+    // Agregar a historial — mantener system prompt + últimos 20 mensajes para no sobrepasar límites
+    const newHistory = [...chatHistoryRef.current, { role: 'user', content: userText }]
+    const systemMsg = newHistory.find(m => m.role === 'system')
+    const rest = newHistory.filter(m => m.role !== 'system').slice(-20)
+    chatHistoryRef.current = systemMsg ? [systemMsg, ...rest] : rest
     setLoading(true)
 
     try {

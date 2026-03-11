@@ -32,7 +32,8 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 })
 
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use('/slides', express.static(SLIDES_DIR))
 app.use('/api/projects', projectsRouter)
 app.use('/api/ai', aiLimiter, aiRouter)
