@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject } from '../services/api'
+import { getProject, regenerateSlide } from '../services/api'
 
 export default function Viewer() {
   const { slug } = useParams()
@@ -40,6 +40,8 @@ function PresentationViewer({ project, onBack }) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fsSize, setFsSize] = useState(null)
   const [scale, setScale] = useState(1)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [regenerating, setRegenerating] = useState(false)
 
   const wrapperRef  = useRef(null)
   const rootRef     = useRef(null)
@@ -49,6 +51,24 @@ function PresentationViewer({ project, onBack }) {
 
   const totalSlides = project.slides.length
   const slideSrc = `/slides/${project.slug}/${project.slides[current - 1]}`
+
+  const handleRegenerateSlide = async () => {
+    const instructions = window.prompt(`Instrucciones para regenerar el slide ${current} (opcional):`, '')
+    if (instructions === null) return // cancelled
+    setRegenerating(true)
+    try {
+      const result = await regenerateSlide({ slug: project.slug, slideIndex: current, instructions })
+      if (result.ok) {
+        setReloadKey((k) => k + 1)
+      } else {
+        alert(`Error al regenerar: ${result.error || 'desconocido'}`)
+      }
+    } catch (err) {
+      alert(`Error al regenerar: ${err.message}`)
+    } finally {
+      setRegenerating(false)
+    }
+  }
   const progress = ((current - 1) / Math.max(totalSlides - 1, 1)) * 100
 
   const prev = useCallback(() => setCurrent((n) => Math.max(1, n - 1)), [])
@@ -207,10 +227,11 @@ function PresentationViewer({ project, onBack }) {
             <span style={{ color: '#888', fontSize: 13 }}>Slide {current}</span>
           </div>
           <button
-            onClick={() => alert('Edición con IA disponible en Fase 3')}
-            style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: '#4CAF50', borderColor: '#1B5E20' }}
+            onClick={handleRegenerateSlide}
+            disabled={regenerating}
+            style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: '#4CAF50', borderColor: '#1B5E20', opacity: regenerating ? 0.6 : 1 }}
           >
-            ✨ Editar con IA
+            {regenerating ? '⏳ Regenerando...' : '↺ Regenerar slide'}
           </button>
           <span style={{ color: '#666', fontSize: 13, fontWeight: 600 }}>
             {current} <span style={{ color: '#444' }}>/</span> {totalSlides}
@@ -274,7 +295,7 @@ function PresentationViewer({ project, onBack }) {
         )}
 
         <iframe
-          key={current}
+          key={`${current}-${reloadKey}`}
           src={slideSrc}
           title={`Slide ${current}`}
           style={{

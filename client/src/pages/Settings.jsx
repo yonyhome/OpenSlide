@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '../store/useSettingsStore'
+import { validateKey } from '../services/api'
 
 const PROVIDERS = [
   { id: 'openai', label: 'OpenAI', placeholder: 'sk-...' },
@@ -13,6 +14,8 @@ export default function Settings() {
   const { keys, setKey } = useSettingsStore()
   const [drafts, setDrafts] = useState({ openai: '', anthropic: '', gemini: '' })
   const [saved, setSaved] = useState({})
+  const [validating, setValidating] = useState({})
+  const [keyStatus, setKeyStatus] = useState({})
 
   const handleSave = (provider) => {
     if (!drafts[provider].trim()) return
@@ -20,6 +23,23 @@ export default function Settings() {
     setSaved((s) => ({ ...s, [provider]: true }))
     setTimeout(() => setSaved((s) => ({ ...s, [provider]: false })), 2000)
     setDrafts((d) => ({ ...d, [provider]: '' }))
+  }
+
+  const handleValidate = async (provider) => {
+    const key = drafts[provider].trim() || keys[provider]
+    if (!key) return
+    setValidating((v) => ({ ...v, [provider]: true }))
+    setKeyStatus((s) => ({ ...s, [provider]: null }))
+    try {
+      // provider id maps to model name for the API
+      const modelMap = { openai: 'openai', anthropic: 'claude', gemini: 'gemini' }
+      const result = await validateKey(modelMap[provider], key)
+      setKeyStatus((s) => ({ ...s, [provider]: result.valid ? 'valid' : 'invalid' }))
+    } catch {
+      setKeyStatus((s) => ({ ...s, [provider]: 'invalid' }))
+    } finally {
+      setValidating((v) => ({ ...v, [provider]: false }))
+    }
   }
 
   return (
@@ -88,6 +108,19 @@ export default function Settings() {
                 }}
               />
               <button
+                onClick={() => handleValidate(p.id)}
+                disabled={validating[p.id] || (!drafts[p.id].trim() && !keys[p.id])}
+                style={{
+                  padding: '10px 14px', borderRadius: 8, border: '1px solid #2a2a2a',
+                  background: '#0a0a0a',
+                  color: validating[p.id] ? '#666' : '#888',
+                  cursor: (drafts[p.id].trim() || keys[p.id]) ? 'pointer' : 'default',
+                  fontSize: 13, fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap',
+                }}
+              >
+                {validating[p.id] ? '...' : 'Verificar'}
+              </button>
+              <button
                 onClick={() => handleSave(p.id)}
                 disabled={!drafts[p.id].trim()}
                 style={{
@@ -101,6 +134,11 @@ export default function Settings() {
                 {saved[p.id] ? '✓ Guardado' : 'Guardar'}
               </button>
             </div>
+            {keyStatus[p.id] && (
+              <p style={{ marginTop: 8, fontSize: 12, color: keyStatus[p.id] === 'valid' ? '#4CAF50' : '#ef4444' }}>
+                {keyStatus[p.id] === 'valid' ? '✅ Key válida' : '❌ Key inválida'}
+              </p>
+            )}
           </div>
         ))}
       </div>

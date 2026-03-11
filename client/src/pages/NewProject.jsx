@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSettingsStore } from '../store/useSettingsStore'
-import { createProject } from '../services/api'
+import { generatePresentation } from '../services/api'
 import ChatMessage from '../components/ChatMessage'
 import ModelSelector from '../components/ModelSelector'
 
@@ -9,7 +9,7 @@ const STYLES = ['Minimal', 'Dark Tech', 'Corporativo', 'Creativo']
 
 export default function NewProject() {
   const navigate = useNavigate()
-  const { model, setModel, hasKey, setKey } = useSettingsStore()
+  const { model, setModel, hasKey, setKey, keys } = useSettingsStore()
 
   const [step, setStep] = useState(0)
   const [messages, setMessages] = useState([
@@ -17,6 +17,7 @@ export default function NewProject() {
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [data, setData] = useState({ model: null, name: '', topic: '', slides: '', style: '' })
   const bottomRef = useRef(null)
 
@@ -115,18 +116,47 @@ export default function NewProject() {
     setStep(6)
   }
 
+  const toSlug = (name) => name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+
   const handleGenerate = async (finalData) => {
-    setLoading(true)
+    setGenerating(true)
+    addMessage('assistant', '⏳ Generando tu presentación... Esto puede tomar entre 30 segundos y 2 minutos dependiendo del modelo y la cantidad de slides.')
+
+    const apiKey = finalData.model === 'openai'
+      ? keys.openai
+      : finalData.model === 'claude'
+        ? keys.anthropic
+        : keys.gemini
+
+    const slug = toSlug(finalData.name)
+
     try {
-      const slug = finalData.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-      await createProject({ slug, name: finalData.name, model: finalData.model })
-      addMessage('assistant', '✅ Proyecto creado. Redirigiendo al inicio...')
-      setTimeout(() => navigate('/'), 1500)
-    } catch {
-      addMessage('assistant', '❌ Hubo un error creando el proyecto. Intenta de nuevo.')
+      const result = await generatePresentation({
+        slug,
+        model: finalData.model,
+        projectName: finalData.name,
+        brief: finalData.topic,
+        slideCount: parseInt(finalData.slides) || 5,
+        theme: styleToTheme(finalData.style),
+        apiKey,
+      })
+
+      if (result.error) {
+        addMessage('assistant', `❌ Error: ${result.error}`)
+      } else {
+        addMessage('assistant', `✅ Presentación generada con ${result.slides?.length || 0} slides. Redirigiendo...`)
+        setTimeout(() => navigate(`/viewer/${slug}`), 1500)
+      }
+    } catch (err) {
+      addMessage('assistant', `❌ Hubo un error: ${err.message || 'Intenta de nuevo.'}`)
     } finally {
-      setLoading(false)
+      setGenerating(false)
     }
+  }
+
+  const styleToTheme = (style) => {
+    const map = { 'Minimal': 'minimal', 'Dark Tech': 'dark-tech', 'Corporativo': 'corporate', 'Creativo': 'creative' }
+    return map[style] || 'dark-tech'
   }
 
   const showInput = step >= 2 && step <= 4
@@ -178,6 +208,17 @@ export default function NewProject() {
                 animation: 'spin 0.8s linear infinite',
               }} />
               Creando proyecto...
+            </div>
+          )}
+
+          {generating && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#4CAF50', fontSize: 14, marginTop: 8 }}>
+              <div style={{
+                width: 16, height: 16, border: '2px solid #1B5E20',
+                borderTop: '2px solid #4CAF50', borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              Generando tu presentación con IA...
             </div>
           )}
 

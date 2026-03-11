@@ -26,3 +26,24 @@ export const generateSlide = (context) => fetch(`${BASE}/ai/generate-slide`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(context)
 }).then(r => r.json())
+
+export const validateKey = (model, apiKey) =>
+  fetch(`${BASE}/ai/validate-key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, apiKey })
+  }).then(r => r.json())
+
+export const generatePresentation = (data) =>
+  fetch(`${BASE}/ai/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json())
+
+export const regenerateSlide = (data) =>
+  fetch(`${BASE}/ai/regenerate-slide`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json())

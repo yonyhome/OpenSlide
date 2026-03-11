@@ -1,26 +1,44 @@
+import Anthropic from '@anthropic-ai/sdk'
 import { AIProvider } from './provider.js'
+import { buildSlideMessages, extractHTML } from './slidePrompts.js'
 
 export class AnthropicProvider extends AIProvider {
   constructor(apiKey) {
     super(apiKey)
-    // TODO: import Anthropic SDK (npm install @anthropic-ai/sdk)
+    this.client = new Anthropic({ apiKey })
+    this.model = 'claude-sonnet-4-5'
   }
 
-  async chat(messages) {
-    // TODO: implement using Anthropic messages.create
-    // const client = new Anthropic({ apiKey: this.apiKey })
-    // const res = await client.messages.create({ model: 'claude-sonnet-4-5', max_tokens: 4096, messages })
-    // return { role: 'assistant', content: res.content[0].text }
-    throw new Error('Anthropic provider not yet implemented')
+  async chat(messages, options = {}) {
+    // Anthropic separa el system message del resto
+    const system = messages.find(m => m.role === 'system')?.content
+    const userMessages = messages.filter(m => m.role !== 'system')
+
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: options.maxTokens || 4096,
+      ...(system && { system }),
+      messages: userMessages,
+    })
+    return response.content[0].text
   }
 
   async generateSlide(context) {
-    // TODO: implement slide generation prompt + HTML response parsing
-    throw new Error('Anthropic generateSlide not yet implemented')
+    const messages = buildSlideMessages(context)
+    const html = await this.chat(messages, { temperature: 0.4, maxTokens: 8192 })
+    return extractHTML(html)
   }
 
   async validateKey() {
-    // TODO: make a lightweight API call to check validity
-    throw new Error('Anthropic validateKey not yet implemented')
+    try {
+      await this.client.messages.create({
+        model: this.model,
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'Hi' }]
+      })
+      return true
+    } catch {
+      return false
+    }
   }
 }
