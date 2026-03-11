@@ -5,7 +5,7 @@ import { generatePresentationStream } from '../services/api'
 import ChatMessage from '../components/ChatMessage'
 import ModelSelector from '../components/ModelSelector'
 
-const STYLES = ['Minimal', 'Dark Tech', 'Corporativo', 'Creativo']
+const STYLES = ['Minimal', 'Dark Tech', 'Corporativo', 'Creativo', '🤖 IA elige el estilo']
 
 function GenerationProgress({ plan, slidesStatus, statusMessage }) {
   const total = plan.length
@@ -64,8 +64,11 @@ export default function NewProject() {
   const [generationPlan, setGenerationPlan] = useState([])
   const [slidesStatus, setSlidesStatus] = useState({})
   const [genStatusMessage, setGenStatusMessage] = useState('')
-  // Keep ref to update progress inline
-  const progressMsgIdxRef = useRef(null)
+
+  // Canvas split view state
+  const [currentPreviewUrl, setCurrentPreviewUrl] = useState(null)
+  const [generationSlug, setGenerationSlug] = useState(null)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -86,12 +89,15 @@ export default function NewProject() {
     setData((d) => ({ ...d, model: m }))
     addMessage('user', `Usar ${m}`)
 
-    if (!hasKey(m)) {
-      addMessage('assistant', `Para usar ${m} necesito tu API key. Ingrésala a continuación:`)
-      setStep(1)
-    } else {
-      addMessage('assistant', '¿Cómo se llama tu proyecto?')
+    // Verificar si ya tiene key configurada
+    const keyMap = { openai: keys.openai, claude: keys.anthropic, gemini: keys.gemini }
+    if (keyMap[m]) {
+      // Ya tiene key, saltar directamente al nombre del proyecto
+      addMessage('assistant', `Perfecto, usaré ${m === 'openai' ? 'OpenAI GPT-4o' : m === 'claude' ? 'Claude Sonnet' : 'Gemini Pro'}. ¿Cómo se llama tu proyecto?`)
       setStep(2)
+    } else {
+      addMessage('assistant', `Para usar ${m === 'openai' ? 'OpenAI' : m === 'claude' ? 'Claude' : 'Gemini'} necesito tu API key. Ingrésala a continuación:`)
+      setStep(1)
     }
   }
 
@@ -144,18 +150,50 @@ export default function NewProject() {
   }
 
   const handleStyleSelect = (style) => {
-    const finalData = { ...data, style }
-    setData(finalData)
+    const withStyle = { ...data, style }
+    setData(withStyle)
     addMessage('user', style)
+
+    // Verificar si tiene Gemini key para ofrecer generación de imágenes
+    if (keys.gemini) {
+      addMessage('assistant', '¿Quieres enriquecer tus slides con imágenes generadas por Gemini AI?', (
+        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+          <button
+            onClick={() => handleImageChoice(true, withStyle)}
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #4CAF5060', background: '#1B5E2022', color: '#4CAF50', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+          >✨ Sí, usar Gemini Imagen</button>
+          <button
+            onClick={() => handleImageChoice(false, withStyle)}
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #2a2a2a', background: '#111', color: '#888', cursor: 'pointer', fontSize: 13 }}
+          >No, solo texto</button>
+        </div>
+      ))
+      setStep(5.5)
+    } else {
+      showSummary(withStyle, false)
+      setStep(6)
+    }
+  }
+
+  const handleImageChoice = (useImages, finalData) => {
+    const withImages = { ...finalData, useImages }
+    setData(withImages)
+    addMessage('user', useImages ? '✨ Usar imágenes IA' : 'Solo texto')
+    showSummary(withImages, useImages)
+    setStep(6)
+  }
+
+  const showSummary = (finalData, useImages) => {
     addMessage('assistant',
       `¡Perfecto! Aquí está el resumen de tu presentación:\n\n` +
       `📁 Nombre: ${finalData.name}\n` +
       `📝 Tema: ${finalData.topic}\n` +
       `🎞️ Slides: ${finalData.slides}\n` +
-      `🎨 Estilo: ${style}\n` +
-      `🤖 Modelo: ${finalData.model}`,
+      `🎨 Estilo: ${finalData.style}\n` +
+      `🤖 Modelo: ${finalData.model}` +
+      (useImages ? '\n✨ Con imágenes generadas por Gemini' : ''),
       <button
-        onClick={() => handleGenerate(finalData)}
+        onClick={() => handleGenerate({ ...finalData, useImages })}
         style={{
           marginTop: 12, padding: '10px 20px', borderRadius: 10, border: 'none',
           background: 'linear-gradient(135deg, #1B5E20, #4CAF50)',
@@ -165,13 +203,18 @@ export default function NewProject() {
         🚀 Generar presentación
       </button>
     )
-    setStep(6)
   }
 
   const toSlug = (name) => name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 
   const styleToTheme = (style) => {
-    const map = { 'Minimal': 'minimal', 'Dark Tech': 'dark-tech', 'Corporativo': 'corporate', 'Creativo': 'creative' }
+    const map = {
+      'Minimal': 'minimal',
+      'Dark Tech': 'dark-tech',
+      'Corporativo': 'corporate',
+      'Creativo': 'creative',
+      '🤖 IA elige el estilo': 'ai-generated'
+    }
     return map[style] || 'dark-tech'
   }
 
@@ -188,6 +231,9 @@ export default function NewProject() {
         : keys.gemini
 
     const slug = toSlug(finalData.name)
+
+    setGenerationSlug(slug)
+    setIsGenerating(true)
 
     // Add initial message
     addMessage('assistant', '🚀 Comenzando generación...')
@@ -207,6 +253,8 @@ export default function NewProject() {
       slideCount: parseInt(finalData.slides) || 5,
       theme: styleToTheme(finalData.style),
       apiKey,
+      useImageGeneration: finalData.useImages || false,
+      geminiApiKey: keys.gemini || null,
     }, {
       onStatus: (payload) => {
         setGenStatusMessage(payload.message)
@@ -225,9 +273,11 @@ export default function NewProject() {
       },
       onSlide: (payload) => {
         setSlidesStatus(prev => ({ ...prev, [payload.slideIndex]: 'done' }))
+        setCurrentPreviewUrl(`/slides/${slug}/${payload.filename}?t=${Date.now()}`)
       },
       onComplete: (payload) => {
         setGenerating(false)
+        setIsGenerating(false)
         setMessages(prev => {
           const filtered = prev.filter(m => !m._isProgress)
           return [...filtered, {
@@ -239,6 +289,7 @@ export default function NewProject() {
       },
       onFatal: (payload) => {
         setGenerating(false)
+        setIsGenerating(false)
         const msg = payload.message?.includes('already exists')
           ? `❌ Ya existe un proyecto con ese nombre. Vuelve al paso anterior y usa un nombre diferente.`
           : `❌ Error: ${payload.message}`
@@ -256,102 +307,140 @@ export default function NewProject() {
   const showKeyInput = step === 1
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', height: '100vh',
-      background: '#080808', fontFamily: "'Inter', 'Segoe UI', sans-serif",
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: '16px 20px', borderBottom: '1px solid #1a1a1a',
-      }}>
-        <button
-          onClick={() => navigate('/')}
-          style={{
-            padding: '7px 14px', borderRadius: 8, border: '1px solid #222',
-            background: '#111', color: '#888', cursor: 'pointer', fontSize: 13,
-          }}
-        >
-          ← Volver
-        </button>
-        <h2 style={{ color: '#f0f0f0', fontSize: 16, fontWeight: 600, margin: 0 }}>
-          Nueva Presentación
-        </h2>
-      </div>
-
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          {messages.map((msg, i) => {
-            if (msg._isProgress) {
-              return (
-                <div key={i} style={{ marginLeft: 42, marginBottom: 16 }}>
-                  <GenerationProgress
-                    plan={generationPlan}
-                    slidesStatus={slidesStatus}
-                    statusMessage={genStatusMessage}
-                  />
-                </div>
-              )
-            }
-            return <ChatMessage key={i} message={msg} />
-          })}
-
-          {/* Model selector en step 0 */}
-          {step === 0 && (
-            <div style={{ marginLeft: 42 }}>
-              <ModelSelector onSelect={handleModelSelect} selected={model} />
-            </div>
-          )}
-
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#555', fontSize: 14 }}>
-              <div style={{
-                width: 16, height: 16, border: '2px solid #222',
-                borderTop: '2px solid #4CAF50', borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }} />
-              Creando proyecto...
-            </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      {/* Input area */}
-      {(showInput || showKeyInput) && (
-        <div style={{
-          padding: '16px 20px', borderTop: '1px solid #1a1a1a',
-          background: '#0a0a0a',
-        }}>
-          <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 10 }}>
-            <input
-              autoFocus
-              type={showKeyInput ? 'password' : 'text'}
-              placeholder={showKeyInput ? 'Pega tu API key aquí...' : 'Escribe tu respuesta...'}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (showKeyInput ? handleKeySubmit() : handleSend())}
-              style={{
-                flex: 1, padding: '12px 16px', borderRadius: 10,
-                border: '1px solid #2a2a2a', background: '#111',
-                color: '#ddd', fontSize: 14, outline: 'none',
-              }}
-            />
-            <button
-              onClick={showKeyInput ? handleKeySubmit : handleSend}
-              style={{
-                padding: '12px 20px', borderRadius: 10, border: 'none',
-                background: 'linear-gradient(135deg, #1B5E20, #4CAF50)',
-                color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700,
-              }}
-            >
-              →
-            </button>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#080808', fontFamily: "'Inter','Segoe UI',sans-serif" }}>
+      {/* Header - siempre visible */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid #1a1a1a', flexShrink: 0 }}>
+        <button onClick={() => navigate('/')} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #222', background: '#111', color: '#888', cursor: 'pointer', fontSize: 13 }}>← Volver</button>
+        <h2 style={{ color: '#f0f0f0', fontSize: 16, fontWeight: 600, margin: 0 }}>Nueva Presentación</h2>
+        {isGenerating && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4CAF50', animation: 'pulse 1.5s infinite' }} />
+            <span style={{ color: '#4CAF50', fontSize: 12, fontWeight: 600 }}>Generando con IA...</span>
           </div>
+        )}
+      </div>
+
+      {/* Body: split cuando generando, chat solo cuando no */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Chat panel */}
+        <div style={{
+          width: isGenerating ? '40%' : '100%',
+          display: 'flex', flexDirection: 'column',
+          borderRight: isGenerating ? '1px solid #1a1a1a' : 'none',
+          transition: 'width 0.3s ease',
+          minWidth: isGenerating ? 320 : 'auto',
+        }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px' }}>
+            <div style={{ maxWidth: isGenerating ? '100%' : 720, margin: '0 auto' }}>
+              {messages.map((msg, i) => {
+                if (msg._isProgress) {
+                  return (
+                    <div key={i} style={{ marginLeft: isGenerating ? 0 : 42, marginBottom: 16 }}>
+                      <GenerationProgress plan={generationPlan} slidesStatus={slidesStatus} statusMessage={genStatusMessage} />
+                    </div>
+                  )
+                }
+                return <ChatMessage key={i} message={msg} />
+              })}
+              {step === 0 && (
+                <div style={{ marginLeft: isGenerating ? 0 : 42 }}>
+                  <ModelSelector onSelect={handleModelSelect} selected={model} />
+                </div>
+              )}
+              {loading && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#555', fontSize: 14 }}>
+                  <div style={{ width: 16, height: 16, border: '2px solid #222', borderTop: '2px solid #4CAF50', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  Creando proyecto...
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </div>
+
+          {(showInput || showKeyInput) && (
+            <div style={{ padding: '16px 20px', borderTop: '1px solid #1a1a1a', background: '#0a0a0a', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input
+                  autoFocus
+                  type={showKeyInput ? 'password' : 'text'}
+                  placeholder={showKeyInput ? 'Pega tu API key...' : 'Escribe tu respuesta...'}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (showKeyInput ? handleKeySubmit() : handleSend())}
+                  style={{ flex: 1, padding: '12px 16px', borderRadius: 10, border: '1px solid #2a2a2a', background: '#111', color: '#ddd', fontSize: 14, outline: 'none' }}
+                />
+                <button onClick={showKeyInput ? handleKeySubmit : handleSend} style={{ padding: '12px 20px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#1B5E20,#4CAF50)', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>→</button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Canvas preview panel - solo durante generación */}
+        {isGenerating && (
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column',
+            background: '#050505', overflow: 'hidden',
+          }}>
+            {/* Header del canvas */}
+            <div style={{ padding: '12px 20px', borderBottom: '1px solid #111', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: '#444', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Vista previa en vivo</span>
+              {currentPreviewUrl && (
+                <span style={{ color: '#1a1a1a', fontSize: 11, marginLeft: 'auto' }}>
+                  Se actualiza con cada slide
+                </span>
+              )}
+            </div>
+
+            {/* Iframe preview */}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              {currentPreviewUrl ? (
+                <div style={{ position: 'relative', width: '100%', maxWidth: 960 }}>
+                  <div style={{
+                    position: 'relative',
+                    paddingBottom: '56.25%',
+                    background: '#111',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    border: '1px solid #222',
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+                  }}>
+                    <iframe
+                      key={currentPreviewUrl}
+                      src={currentPreviewUrl}
+                      sandbox="allow-scripts allow-same-origin"
+                      style={{
+                        position: 'absolute', top: 0, left: 0,
+                        width: '1280px', height: '720px',
+                        border: 'none',
+                        transformOrigin: 'top left',
+                      }}
+                      ref={el => {
+                        if (el) {
+                          const parent = el.parentElement
+                          if (parent) {
+                            const scale = parent.getBoundingClientRect().width / 1280
+                            el.style.transform = `scale(${scale})`
+                            parent.style.height = `${720 * scale}px`
+                            parent.style.paddingBottom = '0'
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  <p style={{ color: '#333', fontSize: 11, textAlign: 'center', marginTop: 10 }}>
+                    Último slide generado
+                  </p>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: '#2a2a2a' }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>🎨</div>
+                  <p style={{ fontSize: 14 }}>Los slides aparecerán aquí<br />mientras se generan</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

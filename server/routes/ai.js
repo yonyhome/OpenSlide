@@ -107,7 +107,7 @@ router.post('/generate', async (req, res) => {
 // Generar con streaming SSE
 router.post('/generate-stream', async (req, res) => {
   try {
-    const { slug, model, projectName, brief, slideCount, theme, extraInstructions, apiKey: clientKey } = req.body
+    const { slug, model, projectName, brief, slideCount, theme, extraInstructions, apiKey: clientKey, useImageGeneration = false, geminiApiKey = null } = req.body
     if (!slug || !model || !projectName || !brief) {
       return res.status(400).json({ error: 'Faltan parámetros: slug, model, projectName, brief' })
     }
@@ -118,7 +118,7 @@ router.post('/generate-stream', async (req, res) => {
     if (!project) project = createProject({ slug, name: projectName, model })
 
     const count = Math.min(parseInt(slideCount) || 5, 20)
-    await generatePresentationStream({ slug, model, apiKey, projectName, brief, slideCount: count, theme: theme || 'dark-tech', extraInstructions }, res)
+    await generatePresentationStream({ slug, model, apiKey, projectName, brief, slideCount: count, theme: theme || 'dark-tech', extraInstructions, useImageGeneration, geminiApiKey }, res)
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message })
   }

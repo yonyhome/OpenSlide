@@ -58,8 +58,18 @@ export const THEMES = {
  * Construye los mensajes para la generación de un slide
  */
 export function buildSlideMessages(context) {
-  const { slideNumber, totalSlides, content, theme = 'dark-tech', projectName } = context
-  const themeData = THEMES[theme] || THEMES['dark-tech']
+  const { slideNumber, totalSlides, content, theme = 'dark-tech', projectName, customThemeCss } = context
+
+  let themeData
+  if (customThemeCss) {
+    themeData = {
+      name: 'Personalizado por IA',
+      description: 'Tema CSS único generado por IA para esta presentación específica',
+      css: customThemeCss
+    }
+  } else {
+    themeData = THEMES[theme] || THEMES['dark-tech']
+  }
 
   const systemPrompt = `Eres un diseñador experto en presentaciones HTML. Tu tarea es generar el código HTML completo y autocontenido de una diapositiva.
 

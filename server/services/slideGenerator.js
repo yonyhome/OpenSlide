@@ -1,5 +1,37 @@
 import { createProvider } from './ai/provider.js'
 import { addSlide, updateMeta, getProject } from './projectManager.js'
+import { generateSlideImage, injectBackgroundImage } from './imageGenerator.js'
+
+/**
+ * Pide al LLM que genere un CSS único para la presentación
+ */
+export async function generateCustomTheme({ provider, projectName, brief }) {
+  const messages = [
+    {
+      role: 'system',
+      content: `Eres un diseñador experto en CSS. Genera un tema visual único y moderno para una presentación HTML.
+REGLAS:
+- Retorna ÚNICAMENTE el CSS, sin explicaciones, sin bloques \`\`\`css
+- El CSS debe estilizar la clase .slide (1280px × 720px)
+- Incluir estilos para: body, .slide, h1, h2, p, li, .accent
+- Usa colores y tipografía coherentes con el tema de la presentación
+- El resultado debe ser visualmente impresionante y único
+- No uses fuentes externas
+- Sé creativo: gradientes, bordes, sombras, efectos sutiles`
+    },
+    {
+      role: 'user',
+      content: `Presentación: "${projectName}"
+Descripción: ${brief}
+
+Genera el CSS personalizado para esta presentación. Solo el CSS, sin nada más.`
+    }
+  ]
+
+  const css = await provider.chat(messages, { temperature: 0.8 })
+  // Limpiar posibles bloques markdown
+  return css.replace(/```css\s*/g, '').replace(/```\s*/g, '').trim()
+}
 
 /**
  * Genera todos los slides de un proyecto usando el LLM
@@ -12,11 +44,19 @@ import { addSlide, updateMeta, getProject } from './projectManager.js'
  * @param {number} params.slideCount - cantidad de slides
  * @param {string} params.theme - tema visual
  * @param {string} params.extraInstructions - instrucciones adicionales del usuario
+ * @param {boolean} params.useImageGeneration - generar imágenes con Gemini
+ * @param {string} params.geminiApiKey - Gemini API key para generación de imágenes
  * @returns {Promise<{slides: string[], errors: string[]}>}
  */
 export async function generatePresentation(params) {
-  const { slug, model, apiKey, projectName, brief, slideCount, theme, extraInstructions } = params
+  const { slug, model, apiKey, projectName, brief, slideCount, theme, extraInstructions, useImageGeneration = false, geminiApiKey = null } = params
   const provider = createProvider(model, apiKey)
+
+  // Generar tema personalizado si se solicitó
+  let customThemeCss = null
+  if (theme === 'ai-generated') {
+    customThemeCss = await generateCustomTheme({ provider, projectName, brief })
+  }
 
   // Primero pedimos al LLM que planifique el contenido de cada slide
   const plan = await planPresentation({ provider, projectName, brief, slideCount, extraInstructions })
@@ -26,13 +66,21 @@ export async function generatePresentation(params) {
 
   for (let i = 0; i < plan.length; i++) {
     try {
-      const html = await provider.generateSlide({
+      let html = await provider.generateSlide({
         slideNumber: i + 1,
         totalSlides: plan.length,
         content: plan[i],
         theme,
+        customThemeCss,
         projectName
       })
+
+      // Enriquecer con imagen generada si se solicitó y hay Gemini key
+      if (useImageGeneration && geminiApiKey) {
+        const imagePrompt = `${projectName}: ${plan[i].slice(0, 100)}`
+        const image = await generateSlideImage(geminiApiKey, imagePrompt)
+        if (image) html = injectBackgroundImage(html, image)
+      }
 
       const filename = addSlide(slug, i + 1, html)
       slides.push(filename)
@@ -44,7 +92,7 @@ export async function generatePresentation(params) {
   }
 
   // Actualizar meta con modelo usado
-  updateMeta(slug, { model, theme, generatedAt: new Date().toISOString() })
+  updateMeta(slug, { model, theme, customThemeCss, generatedAt: new Date().toISOString() })
 
   return { slides, errors }
 }
@@ -55,7 +103,7 @@ export async function generatePresentation(params) {
  * @param {object} res - Express response object
  */
 export async function generatePresentationStream(params, res) {
-  const { slug, model, apiKey, projectName, brief, slideCount, theme, extraInstructions } = params
+  const { slug, model, apiKey, projectName, brief, slideCount, theme, extraInstructions, useImageGeneration = false, geminiApiKey = null } = params
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -68,6 +116,14 @@ export async function generatePresentationStream(params, res) {
 
   try {
     const provider = createProvider(model, apiKey)
+
+    // Generar tema personalizado si se solicitó
+    let customThemeCss = null
+    if (theme === 'ai-generated') {
+      send('status', { message: 'Generando tema visual personalizado con IA...', phase: 'theme' })
+      customThemeCss = await generateCustomTheme({ provider, projectName, brief })
+      send('theme', { css: customThemeCss })
+    }
 
     send('status', { message: 'Planificando estructura de la presentación...', phase: 'planning' })
 
@@ -82,13 +138,21 @@ export async function generatePresentationStream(params, res) {
       send('progress', { slideIndex: i + 1, total: plan.length, status: 'generating', content: plan[i] })
 
       try {
-        const html = await provider.generateSlide({
+        let html = await provider.generateSlide({
           slideNumber: i + 1,
           totalSlides: plan.length,
           content: plan[i],
           theme,
+          customThemeCss,
           projectName
         })
+
+        // Enriquecer con imagen generada si se solicitó y hay Gemini key
+        if (useImageGeneration && geminiApiKey) {
+          const imagePrompt = `${projectName}: ${plan[i].slice(0, 100)}`
+          const image = await generateSlideImage(geminiApiKey, imagePrompt)
+          if (image) html = injectBackgroundImage(html, image)
+        }
 
         const filename = addSlide(slug, i + 1, html)
         slides.push(filename)
@@ -100,7 +164,7 @@ export async function generatePresentationStream(params, res) {
       }
     }
 
-    updateMeta(slug, { model, theme, generatedAt: new Date().toISOString() })
+    updateMeta(slug, { model, theme, customThemeCss, generatedAt: new Date().toISOString() })
     send('complete', { slides, errors, slug })
 
   } catch (err) {

@@ -104,3 +104,21 @@ export const exportProject = (slug) => {
   a.click()
   document.body.removeChild(a)
 }
+
+export const exportProjectPDF = (slug) => {
+  const a = document.createElement('a')
+  a.href = `${BASE}/projects/${slug}/export/pdf`
+  a.download = `${slug}.pdf`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+export const exportProjectPPTX = (slug) => {
+  const a = document.createElement('a')
+  a.href = `${BASE}/projects/${slug}/export/pptx`
+  a.download = `${slug}.pptx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}

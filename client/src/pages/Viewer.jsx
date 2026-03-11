@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProject, regenerateSlide, exportProject } from '../services/api'
+import { getProject, regenerateSlide, exportProject, exportProjectPDF, exportProjectPPTX } from '../services/api'
 
 export default function Viewer() {
   const { slug } = useParams()
@@ -55,6 +55,7 @@ function PresentationViewer({ project, onBack, onProjectRefresh }) {
   const [regenModal, setRegenModal] = useState(false)
   const [regenInstructions, setRegenInstructions] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
   const wrapperRef  = useRef(null)
   const rootRef     = useRef(null)
@@ -251,12 +252,38 @@ function PresentationViewer({ project, onBack, onProjectRefresh }) {
           >
             ✏️ Editar con IA
           </button>
-          <button
-            onClick={() => exportProject(project.slug)}
-            style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: '#888', borderColor: '#333' }}
-          >
-            ⬇ Exportar ZIP
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setExportMenuOpen(!exportMenuOpen)}
+              style={{ ...btnStyle, padding: '7px 14px', fontSize: 13, color: '#888', borderColor: '#333' }}
+            >
+              ⬇ Exportar ▾
+            </button>
+            {exportMenuOpen && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                background: '#111', border: '1px solid #222', borderRadius: 10,
+                padding: 6, zIndex: 100, minWidth: 200,
+              }}>
+                {[
+                  { label: '📄 PDF', action: () => { exportProjectPDF(project.slug); setExportMenuOpen(false) } },
+                  { label: '📊 PowerPoint (.pptx)', action: () => { exportProjectPPTX(project.slug); setExportMenuOpen(false) } },
+                  { label: '📦 ZIP (HTMLs)', action: () => { exportProject(project.slug); setExportMenuOpen(false) } },
+                ].map(item => (
+                  <button key={item.label} onClick={item.action} style={{
+                    display: 'block', width: '100%', textAlign: 'left',
+                    padding: '8px 12px', borderRadius: 7, border: 'none',
+                    background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 13,
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#1a1a1a'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={handleRegenerateSlide}
             disabled={regenerating}
